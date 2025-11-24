@@ -1,12 +1,21 @@
 const pool = require('../config/db');
 const q = require('../db/queries');
 const { MAC_RE, EQUIPMENT_LIST } = require('../constants');
+const {MAC_SLOTS} = require('./../config/dialsConfig')
 
 function validateMapping(m) {
   return m && typeof m.mac === 'string' && typeof m.equipmentName === 'string'
     && MAC_RE.test(m.mac) && EQUIPMENT_LIST.includes(m.equipmentName);
 }
 
+exports.getMapAddresses = async (req, res) => {
+  try {
+    res.json(MAC_SLOTS);
+  } catch (e) {
+    console.error('getMacAddresses error:', e);
+    res.status(500).json({ error: 'getMacAddresses' });
+  }
+};
 exports.getMappings = async (req, res) => {
   try {
     const [rows] = await pool.query(q.SELECT_MAPPINGS);

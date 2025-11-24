@@ -1,6 +1,9 @@
 const pool = require('../config/db');
 const q = require('../db/queries');
 const svc = require('../utils/serviceCtl');
+const { checkAllDialsStatus } = require('../utils/bluetoothChecker');
+
+
 
 exports.status = async (req, res) => {
   try {
@@ -21,6 +24,31 @@ exports.status = async (req, res) => {
   }
 };
 
+
+// In your backend serviceController.js, modify the response
+exports.dialsStatus = async (req, res) => {
+  try {
+    const statusData = await checkAllDialsStatus();
+    
+    // Send minimal data - only MAC and connected status
+    const minimalResponse = {
+      success: true,
+      data: {
+        dials: statusData.dials.map(dial => ({
+          mac: dial.mac,
+          connected: dial.connected
+        }))
+      }
+    };
+    
+    res.json(minimalResponse);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      data: null
+    });
+  }
+};
 
 // exports.start = async (req, res) => {
 //   try {
