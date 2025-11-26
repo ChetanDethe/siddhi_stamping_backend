@@ -1,74 +1,63 @@
-// const { exec } = require('child_process');
-const config = require('../config/env');
+//utils/serviceChecker.js 
+
 const util = require('util');
-// const exec = util.promisify(require('child_process').exec);
-
 const exec = util.promisify(require('child_process').exec);
+const config = require('../config/env');
 
-function run(cmd) {
-  return new Promise((resolve, reject) => {
-    exec(cmd, { windowsHide: true }, (err, stdout, stderr) => {
-      if (err) return reject({ err, stdout, stderr });
-      resolve({ stdout, stderr });
-    });
-  });
-}
+// --- STATE ---
+// This variable is updated in the background.
+// The API reads this instantly.
+let isServiceRunning = false; 
 
-// async function isRunning() {
-//   const name = config.pyServiceName;
-//   try {
-//     const { stdout } = await run(`nssm status ${name}`);
-//     return stdout.toLowerCase().includes('running');
-//   } catch {
-//     try {
-//       const { stdout } = await run(`sc query "${name}"`);
-//       return /STATE\s*:\s*4\s+RUNNING/i.test(stdout);
-//     } catch { return false; }
-//   }
-// }
-
-
-
-
-
-async function isRunning() {
+// --- BACKGROUND WORKER ---
+const updateServiceStatus = async () => {
   try {
+    // Check if Python process is running
+    // -NoProfile: Faster startup
+    // -NonInteractive: Safer
     const { stdout } = await exec(
-      `powershell -NoProfile -ExecutionPolicy Bypass -Command `
-      + `"Get-CimInstance Win32_Process `
-      + `| Where-Object { `
-      + `($_.Name -eq 'python.exe' -or $_.Name -eq 'pythonw.exe') `
-      + `-and $_.CommandLine -match 'sylvac_reader.py' `
-      + `} `
-      + `| Select-Object -ExpandProperty ProcessId"`
+      `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process -Filter \\"Name like 'python%'\\" | Where-Object { $_.CommandLine -match 'sylvac_reader.py' } | Select-Object -First 1 ProcessId"`
     );
-
-    const output = Buffer.isBuffer(stdout) ? stdout.toString() : stdout;
-
-    // If any PID exists → running
-    return output.trim().length > 0;
+    
+    isServiceRunning = stdout.trim().length > 0;
   } catch (err) {
-    console.error("isRunning() ERROR:", err);
-    return false;
+    isServiceRunning = false;
+  } finally {
+    // Re-check in 3 seconds
+    setTimeout(updateServiceStatus, 3000);
   }
+};
+
+// Start the worker immediately
+updateServiceStatus();
+
+// --- EXPORTS ---
+
+// 1. Instant Synchronous Getter (For the Controller)
+function getRunningState() {
+  return isServiceRunning;
 }
 
-
+// 2. Legacy Start/Stop (Keep these async as they are user actions)
+async function run(cmd) {
+  return exec(cmd, { windowsHide: true });
+}
 
 async function start() {
   const name = config.pyServiceName;
   try { await run(`nssm start ${name}`); }
   catch { await run(`sc start "${name}"`); }
-  await new Promise(r => setTimeout(r, 800));
-  return isRunning();
+  // Force an immediate update after action
+  setTimeout(updateServiceStatus, 1000);
+  return true;
 }
 
 async function stop() {
   const name = config.pyServiceName;
   try { await run(`nssm stop ${name}`); }
   catch { await run(`sc stop "${name}"`); }
-  await new Promise(r => setTimeout(r, 800));
-  return isRunning();
+  setTimeout(updateServiceStatus, 1000);
+  return false;
 }
 
-module.exports = { isRunning, start, stop };
+module.exports = { getRunningState, start, stop };

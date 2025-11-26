@@ -1,15 +1,14 @@
+//controllers/serviceController.js
 const pool = require('../config/db');
-const q = require('../db/queries');
 const svc = require('../utils/serviceCtl');
-const { checkAllDialsStatus } = require('../utils/bluetoothChecker');
-
-
 
 exports.status = async (req, res) => {
   try {
-    // <-- Use isRunning(), NOT start()
-    const running = await svc.isRunning();  
+    // 1. GET PROCESS STATUS (Instant from Memory)
+    const running = svc.getRunningState();
 
+    // 2. GET DB STATUS (Fast via Index)
+    // Since we indexed CRTD, this is lightning fast (~1-5ms)
     const [rows] = await pool.query(
       'SELECT DATE_FORMAT(MAX(CRTD), "%Y-%m-%d %H:%i:%s.%f") AS lastReadingAt FROM bluetooth_sensor_value'
     );
@@ -20,53 +19,19 @@ exports.status = async (req, res) => {
     });
 
   } catch (e) {
+    console.error('Status API Error:', e.message);
     res.status(500).json({ running: false, error: 'status error' });
   }
 };
 
+// Your dialsStatus is already optimized, keep it as is.
+const { getDialStatusWithCache } = require('../utils/bluetoothChecker');
 
-// In your backend serviceController.js, modify the response
 exports.dialsStatus = async (req, res) => {
   try {
-    const statusData = await checkAllDialsStatus();
-    
-    // Send minimal data - only MAC and connected status
-    const minimalResponse = {
-      success: true,
-      data: {
-        dials: statusData.dials.map(dial => ({
-          mac: dial.mac,
-          connected: dial.connected
-        }))
-      }
-    };
-    
-    res.json(minimalResponse);
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      data: null
-    });
+     const statusData = await getDialStatusWithCache();
+     res.json({ success: true, data: { dials: statusData.dials } });
+  } catch(e) {
+     res.status(500).json({ success: false, data: null });
   }
 };
-
-// exports.start = async (req, res) => {
-//   try {
-//     const running = await svc.start();
-//     if (!running) return res.status(500).json({ running: false, error: 'Failed to start' });
-//     res.json({ running: true });
-//   } catch (e) {
-//     console.error('start error:', e);
-//     res.status(500).json({ error: 'start error' });
-//   }
-// };
-
-// exports.stop = async (req, res) => {
-//   try {
-//     const running = await svc.stop();
-//     res.json({ running });
-//   } catch (e) {
-//     console.error('stop error:', e);
-//     res.status(500).json({ error: 'stop error' });
-//   }
-// };
