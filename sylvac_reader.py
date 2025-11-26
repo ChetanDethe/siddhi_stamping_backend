@@ -118,10 +118,10 @@ class DatabaseManager:
                 autocommit=False,
                 connection_timeout=5,
             )
-            logger.info("✅ Database connection successful.")
+            logger.info(" Database connection successful.")
             return True
         except mysql.connector.Error as err:
-            logger.error(f"❌ Database connection failed: {err}")
+            logger.error(f" Database connection failed: {err}")
             self.conn = None
             return False
 
@@ -151,12 +151,12 @@ class DatabaseManager:
                        VALUES (%s, %s, %s, %s)"""
             cursor.execute(query, (device_mac, equipment_name, value, timestamp))
             self.conn.commit()
-            msg = f"✅ Reading saved → MAC: {device_mac}, Equip: {equipment_name}, Value: {value}, Time: {timestamp}"
+            msg = f"Reading saved → MAC: {device_mac}, Equip: {equipment_name}, Value: {value}, Time: {timestamp}"
             logger.info(msg)
             print(msg)
             return True
         except mysql.connector.Error as err:
-            logger.error(f"❌ Database error during insert: {err}")
+            logger.error(f" Database error during insert: {err}")
             if self.conn:
                 self.conn.rollback()
             return False
@@ -188,7 +188,7 @@ class DatabaseManager:
         if self.conn:
             try:
                 self.conn.close()
-                logger.info("🔌 Database connection closed.")
+                logger.info(" Database connection closed.")
             except Exception as e:
                 logger.error(f"Error closing database connection: {e}")
 
@@ -379,7 +379,7 @@ def refresh_mapping_if_needed():
         if mapping:
             _mapping_cache = mapping
             _last_mapping_load = now
-            logger.info("🔄 Mapping refreshed: %d entries", len(_mapping_cache))
+            logger.info(" Mapping refreshed: %d entries", len(_mapping_cache))
     except Exception:
         logger.exception("Failed to refresh mapping")
 
@@ -425,7 +425,7 @@ def handle_complete_reading(mac: str, reading: str):
 
         # Log to console + file
         console_msg = f"{ts_str} MAC: {mac} Equip: {equipment} Value: {value_float:.3f}"
-        print(f"📊 Reading received: {console_msg}")
+        print(f" Reading received: {console_msg}")
         logger.info(f"Reading received: MAC={mac}, Equip={equipment}, Value={value_float}")
 
         # Save to database
@@ -562,20 +562,20 @@ def main():
 
     logger.info("Starting Sylvac to MySQL Logger...")
     print("=" * 60)
-    print("🚀 Sylvac HID Reader with MySQL Database Integration")
+    print(" Sylvac HID Reader with MySQL Database Integration")
     print("=" * 60)
 
     # Initialize database connection
     db_manager = DatabaseManager()
     if not db_manager.conn:
-        print("⚠️  Warning: Running without database connection.")
+        print("  Warning: Running without database connection.")
         print("    Readings will be displayed but not saved.")
     else:
-        print("✅ Database connected successfully.")
+        print(" Database connected successfully.")
 
-    print("\n📡 Listening for HID dials (HID keyboard mode)...")
-    print("🔹 Send readings from each dial - they will be saved to database")
-    print("🔹 Press Ctrl+C to exit safely.\n")
+    print("\n Listening for HID dials (HID keyboard mode)...")
+    print(" Send readings from each dial - they will be saved to database")
+    print(" Press Ctrl+C to exit safely.\n")
     print("-" * 60)
 
     hwnd = None
@@ -622,7 +622,7 @@ def main():
     finally:
         try:
             print("\n" + "-" * 60)
-            print("🛑 Shutting down...")
+            print(" Shutting down...")
 
             # Finish processing any last messages
             drain_rawinput(0.2)
@@ -642,7 +642,7 @@ def main():
         except Exception:
             logger.exception("Shutdown cleanup failed")
 
-        print("✅ Stopped listening. Goodbye!")
+        print(" Stopped listening. Goodbye!")
         if hwnd:
             try:
                 win32gui.DestroyWindow(hwnd)
