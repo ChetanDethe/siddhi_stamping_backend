@@ -1,88 +1,65 @@
+// utils/bluetoothChecker.js
 const { exec } = require('child_process');
 const util = require('util');
 const execAsync = util.promisify(exec);
+const { MAC_SLOTS } = require('../config/dialsConfig');
 
-async function isConnectedWindows(mac) {
+// Cache to prevent hitting PowerShell too often
+let cache = { data: null, lastFetch: 0 };
+const CACHE_TTL = 1500; // 1.5 seconds
+
+async function getConnectedDevices() {
+  const now = Date.now();
+  if (cache.data && (now - cache.lastFetch < CACHE_TTL)) {
+    return cache.data;
+  }
+
   try {
-    // Multiple PowerShell commands to check Bluetooth/HID device status
-    const commands = [
-      // Method 1: Check PnP devices (most reliable for HID)
-      `powershell -Command "Get-PnpDevice | Where-Object { $_.InstanceId -match '${mac.toUpperCase()}' } | Select-Object -ExpandProperty Status"`,
-      
-      // Method 2: Check Bluetooth devices specifically
-      `powershell -Command "Get-PnpDevice | Where-Object { $_.InstanceId -like '*${mac.toUpperCase()}*' -and $_.Class -eq 'Bluetooth' } | Select-Object -ExpandProperty Status"`,
-    ];
-
-    for (const command of commands) {
-      try {
-        const { stdout } = await execAsync(command, { timeout: 5000 });
-        const status = stdout.trim().toUpperCase();
-        
-        // Check for connected/OK status
-        if (status.includes('OK') || status.includes('1') || status === 'DEVPRESENT') {
-          return true;
-        }
-      } catch (err) {
-        // Try next method if one fails
-        continue;
-      }
-    }
+    // OPTIMIZATION: Fetch ALL Bluetooth devices in ONE command
+    // We look for devices with Status 'OK'
+    const command = `powershell -Command "Get-PnpDevice -Class 'Bluetooth' -Status 'OK' | Select-Object -ExpandProperty InstanceId"`;
+    const { stdout } = await execAsync(command, { timeout: 4000 });
     
-    return false;
+    // Store as a Set for O(1) lookup speed
+    const connectedIds = new Set(stdout.toUpperCase().split(/\r?\n/).map(s => s.trim()));
+    
+    cache = { data: connectedIds, lastFetch: now };
+    return connectedIds;
   } catch (error) {
-    console.log(`Error checking MAC ${mac}:`, error.message);
-    return false;
+    console.error('Bluetooth check error:', error.message);
+    return new Set(); // Return empty set on error so server doesn't crash
   }
 }
 
 async function checkAllDialsStatus() {
-  const { MAC_SLOTS } = require('../config/dialsConfig');
+  // 1. Get all connected IDs once
+  const connectedIds = await getConnectedDevices();
   
-  const results = [];
-  // console.log('🔍 Checking dial connection status...');
-  
-  for (const slot of MAC_SLOTS) {
-    // console.log(`Checking ${slot.name} (${slot.mac})...`);
-    const connected = await isConnectedWindows(slot.mac);
-    results.push({
-      name: slot.name,
+  // 2. Map against your config
+  const results = MAC_SLOTS.map(slot => {
+    const cleanMac = slot.mac.replace(/[:\s]/g, '').toUpperCase();
+    // Check if the MAC exists in the connected IDs
+    // We check if the ID *includes* the MAC because InstanceIds are long strings
+    const isConnected = Array.from(connectedIds).some(id => id.includes(cleanMac));
+
+    return {
       mac: slot.mac,
-      connected: connected,
-      timestamp: new Date().toISOString()
-    });
-  }
-  
-  const connectedCount = results.filter(r => r.connected).length;
-  const totalCount = results.length;
-  
+      connected: isConnected
+    };
+  });
+
   return {
     summary: {
-      connected: connectedCount,
-      disconnected: totalCount - connectedCount,
-      total: totalCount,
-      allConnected: connectedCount === totalCount
+      connected: results.filter(r => r.connected).length,
+      total: results.length
     },
     dials: results
   };
 }
 
-
-const cache = new Map();
-const CACHE_DURATION = 5 * 1000; // 5 seconds
-
+// Wrapper for controller compatibility
 async function getDialStatusWithCache() {
-  const now = Date.now();
-  const cacheKey = 'dials_status';
-  
-  if (cache.has(cacheKey) && (now - cache.get(cacheKey).timestamp) < CACHE_DURATION) {
-    console.log('📦 Using cached dial status');
-    return cache.get(cacheKey).data;
-  }
-  
-  const freshData = await checkAllDialsStatus();
-  cache.set(cacheKey, { data: freshData, timestamp: now });
-  
-  return freshData;
+  return await checkAllDialsStatus();
 }
 
 module.exports = { checkAllDialsStatus, getDialStatusWithCache };
